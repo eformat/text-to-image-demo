@@ -1,0 +1,142 @@
+# PIPELINE DEFINITION
+# Name: fine-tuning
+components:
+  comp-run-a-file:
+    executorLabel: exec-run-a-file
+deploymentSpec:
+  executors:
+    exec-run-a-file:
+      container:
+        args:
+        - 'sh -c "mkdir -p ./jupyter-work-dir && cd ./jupyter-work-dir"
+
+          sh -c "[[ -e ''/opt/app-root/bin/utils/bootstrapper.py'' ]] && (echo ''bootstrapper.py
+          file already exists''; cp ''/opt/app-root/bin/utils/bootstrapper.py'' .)
+          || (echo ''Downloading https://raw.githubusercontent.com/opendatahub-io/elyra/v4.2.2/elyra/kfp/bootstrapper.py'';
+          curl --fail -H ''Cache-Control: no-cache'' -L ''https://raw.githubusercontent.com/opendatahub-io/elyra/v4.2.2/elyra/kfp/bootstrapper.py''
+          --output bootstrapper.py)"
+
+          sh -c "[[ -e ''/opt/app-root/bin/utils/requirements-elyra.txt'' ]] && (echo
+          ''requirements-elyra.txt file already exists''; cp ''/opt/app-root/bin/utils/requirements-elyra.txt''
+          .) || (echo ''Downloading https://raw.githubusercontent.com/opendatahub-io/elyra/v4.2.2/etc/generic/requirements-elyra.txt'';
+          curl --fail -H ''Cache-Control: no-cache'' -L ''https://raw.githubusercontent.com/opendatahub-io/elyra/v4.2.2/etc/generic/requirements-elyra.txt''
+          --output requirements-elyra.txt)"
+
+          sh -c "python3 -m pip install  packaging && python3 -m pip freeze > requirements-current.txt
+          && python3 bootstrapper.py --pipeline-name ''Fine Tuning'' --cos-endpoint
+          ''http://minio.minio.svc.cluster.local:9000'' --cos-bucket ''data'' --cos-directory
+          ''Fine Tuning-0925050723'' --cos-dependencies-archive ''2_fine_tuning-e673b91d-dcaf-48a8-84a2-08a65381db29.tar.gz''
+          --file ''text-to-image-demo/2_fine_tuning.ipynb'' "
+
+          '
+        command:
+        - sh
+        - -c
+        env:
+        - name: VERSION
+          value: pipeline-output
+        - name: ELYRA_RUNTIME_ENV
+          value: kfp
+        - name: ELYRA_ENABLE_PIPELINE_INFO
+          value: 'True'
+        - name: ELYRA_WRITABLE_CONTAINER_DIR
+          value: /tmp
+        - name: ELYRA_RUN_NAME
+          value: '{{workflow.uid}}'
+        image: quay.io/modh/odh-pipeline-runtime-pytorch-cuda-py312-ubi9@sha256:72ff2381e5cb24d6f549534cb74309ed30e92c1ca80214669adb78ad30c5ae12
+        resources:
+          accelerator:
+            count: '1'
+            resourceCount: '1'
+            resourceType: nvidia.com/gpu
+            type: nvidia.com/gpu
+          cpuRequest: 4.0
+          memoryRequest: 16.0
+          resourceCpuRequest: '4'
+          resourceMemoryRequest: 16G
+pipelineInfo:
+  name: fine-tuning
+root:
+  dag:
+    tasks:
+      run-a-file:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-run-a-file
+        taskInfo:
+          name: 2_fine_tuning
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.12.2
+---
+platforms:
+  kubernetes:
+    deploymentSpec:
+      executors:
+        exec-run-a-file:
+          podMetadata:
+            annotations:
+              elyra/node-file-name: text-to-image-demo/2_fine_tuning.ipynb
+              elyra/pipeline-source: Fine Tuning.pipeline
+            labels:
+              elyra/experiment-name: ''
+              elyra/node-name: 2_fine_tuning
+              elyra/node-type: notebook-script
+              elyra/pipeline-name: Fine_Tuning
+              elyra/pipeline-version: ''
+          secretAsEnv:
+          - keyToEnv:
+            - envVar: AWS_ACCESS_KEY_ID
+              secretKey: AWS_ACCESS_KEY_ID
+            - envVar: AWS_SECRET_ACCESS_KEY
+              secretKey: AWS_SECRET_ACCESS_KEY
+            secretName: aws-connection-shared-minio-pipelines
+            secretNameParameter:
+              runtimeValue:
+                constant: aws-connection-shared-minio-pipelines
+          - keyToEnv:
+            - envVar: AWS_ACCESS_KEY_ID
+              secretKey: AWS_ACCESS_KEY_ID
+            secretName: aws-connection-pipeline-artifacts
+            secretNameParameter:
+              runtimeValue:
+                constant: aws-connection-pipeline-artifacts
+          - keyToEnv:
+            - envVar: AWS_DEFAULT_REGION
+              secretKey: AWS_DEFAULT_REGION
+            secretName: aws-connection-pipeline-artifacts
+            secretNameParameter:
+              runtimeValue:
+                constant: aws-connection-pipeline-artifacts
+          - keyToEnv:
+            - envVar: AWS_S3_BUCKET
+              secretKey: AWS_S3_BUCKET
+            secretName: aws-connection-pipeline-artifacts
+            secretNameParameter:
+              runtimeValue:
+                constant: aws-connection-pipeline-artifacts
+          - keyToEnv:
+            - envVar: AWS_S3_ENDPOINT
+              secretKey: AWS_S3_ENDPOINT
+            secretName: aws-connection-pipeline-artifacts
+            secretNameParameter:
+              runtimeValue:
+                constant: aws-connection-pipeline-artifacts
+          - keyToEnv:
+            - envVar: AWS_SECRET_ACCESS_KEY
+              secretKey: AWS_SECRET_ACCESS_KEY
+            secretName: aws-connection-pipeline-artifacts
+            secretNameParameter:
+              runtimeValue:
+                constant: aws-connection-pipeline-artifacts
+          - keyToEnv:
+            - envVar: HF_TOKEN
+              secretKey: HF_TOKEN
+            secretName: hf-token-secret
+            secretNameParameter:
+              runtimeValue:
+                constant: hf-token-secret
+          tolerations:
+          - effect: NoSchedule
+            key: nvidia.com/gpu
+            operator: Exists
